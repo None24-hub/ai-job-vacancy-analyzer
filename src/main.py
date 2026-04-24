@@ -1,5 +1,6 @@
 import argparse
 import json
+from pathlib import Path
 import sys
 
 from analyzer import AnalysisError, analyze_with_api, parse_analysis_json
@@ -7,6 +8,7 @@ from config import OUTPUT_CSV_PATH, SAMPLE_VACANCY_PATH, ensure_directories, loa
 from heuristics import calculate_local_risk_score
 from markdown_export import export_analyses_to_markdown, export_analysis_to_markdown
 from prompts import build_manual_prompt
+from report import ReportError, export_report
 from schemas import VacancyAnalysis
 from storage import filter_analyses, load_recent_analyses, load_saved_analyses, save_analysis_to_csv
 
@@ -250,6 +252,15 @@ def run_api_mode(vacancy_text: str) -> None:
     print_save_summary(analysis, output_path)
 
 
+def run_selected_analysis_mode(vacancy_text: str, mode: str) -> None:
+    if mode == "manual_prompt":
+        print_manual_prompt(vacancy_text)
+    elif mode == "manual_json_save":
+        run_manual_json_save_mode(vacancy_text)
+    elif mode == "api":
+        run_api_mode(vacancy_text)
+
+
 def run_analysis_flow() -> None:
     vacancy_text = choose_vacancy_source()
 
@@ -263,12 +274,8 @@ def run_analysis_flow() -> None:
     print_local_red_flags(vacancy_text)
     mode = choose_analysis_mode()
 
-    if mode == "manual_prompt":
-        print_manual_prompt(vacancy_text)
-    elif mode == "manual_json_save":
-        run_manual_json_save_mode(vacancy_text)
-    elif mode == "api":
-        run_api_mode(vacancy_text)
+    if mode is not None:
+        run_selected_analysis_mode(vacancy_text, mode)
 
 
 def run_view_saved_menu() -> None:
@@ -395,6 +402,20 @@ def build_arg_parser() -> argparse.ArgumentParser:
     export_parser = subparsers.add_parser("export", help="Экспортировать последние анализы в Markdown")
     export_parser.add_argument("--limit", type=int, default=5, help="Сколько последних анализов экспортировать")
 
+    analyze_file_parser = subparsers.add_parser("analyze-file", help="Проанализировать вакансию из .txt файла")
+    analyze_file_parser.add_argument("path", help="Путь к .txt файлу с вакансией")
+    analyze_file_parser.add_argument(
+        "--mode",
+        choices=["manual_prompt", "manual_json_save", "api"],
+        default="manual_prompt",
+        help="Режим анализа",
+    )
+
+    report_parser = subparsers.add_parser("report", help="Создать общий Markdown-отчёт")
+    report_parser.add_argument("--limit", type=int, default=10, help="Сколько последних анализов включить")
+    report_parser.add_argument("--decision", choices=["apply", "consider", "skip"], help="Фильтр по решению")
+    report_parser.add_argument("--min-score", type=int, help="Минимальный fit_score")
+
     return parser
 
 
@@ -431,6 +452,42 @@ def run_export_command(args: argparse.Namespace) -> None:
         print(f"- {path}")
 
 
+def run_analyze_file_command(args: argparse.Namespace) -> None:
+    file_path = Path(args.path)
+
+    if not file_path.exists():
+        print(f"Файл не найден: {file_path}")
+        return
+    if not file_path.is_file():
+        print(f"Указанный путь не является файлом: {file_path}")
+        return
+
+    vacancy_text = file_path.read_text(encoding="utf-8").strip()
+
+    if not vacancy_text:
+        print(f"Файл пустой: {file_path}")
+        return
+
+    print_local_red_flags(vacancy_text)
+    run_selected_analysis_mode(vacancy_text, args.mode)
+
+
+def run_report_command(args: argparse.Namespace) -> None:
+    limit = normalize_limit(args.limit, default=10)
+
+    try:
+        report_path = export_report(
+            decision=args.decision,
+            min_score=args.min_score,
+            limit=limit,
+        )
+    except ReportError as error:
+        print(error)
+        return
+
+    print(f"Markdown-отчёт создан: {report_path}")
+
+
 def normalize_limit(value: int, default: int = 5) -> int:
     return value if value > 0 else default
 
@@ -447,6 +504,12 @@ def main() -> None:
         return
     if args.command == "export":
         run_export_command(args)
+        return
+    if args.command == "analyze-file":
+        run_analyze_file_command(args)
+        return
+    if args.command == "report":
+        run_report_command(args)
         return
 
     print("AI Job Vacancy Analyzer — MVP CLI")

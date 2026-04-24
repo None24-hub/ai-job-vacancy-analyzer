@@ -3,15 +3,13 @@
 `ai-job-vacancy-analyzer` — CLI-приложение для анализа вакансий под профиль начинающего кандидата, которому интересны офисные, удалённые, back-office, support, QA, data, content, Python и automation-задачи.
 
 Проект помогает:
-- оценить, насколько вакансия подходит профилю кандидата;
+- оценить вакансию через ChatGPT/OpenAI API или ручной JSON-ответ;
 - увидеть локальные красные флаги и предварительный risk score;
 - сохранить структурированный анализ в CSV;
 - просмотреть и отфильтровать сохранённые анализы;
-- экспортировать один или несколько анализов в Markdown.
+- экспортировать отдельные Markdown-файлы и общие Markdown-отчёты.
 
 ## Установка на Windows
-
-Откройте PowerShell в папке проекта и выполните:
 
 ```powershell
 python -m venv .venv
@@ -20,21 +18,19 @@ pip install -r requirements.txt
 python src/main.py
 ```
 
-Альтернативный запуск без активации виртуального окружения:
+Альтернативный запуск без активации:
 
 ```powershell
 .\.venv\Scripts\python.exe src\main.py
 ```
 
-## Запуск тестов
+## Тесты
 
 ```powershell
 python -m pytest
 ```
 
 ## Настройка `.env`
-
-Создайте файл `.env` на основе `.env.example`:
 
 ```powershell
 copy .env.example .env
@@ -66,14 +62,12 @@ python src/main.py
 
 ## Анализ вакансии
 
-Пункт `1 — проанализировать вакансию` спрашивает источник вакансии:
-- sample-вакансия из `data/sample_yandex_fintech.txt`;
-- ручной ввод.
+Интерактивный режим позволяет выбрать sample-вакансию или вставить текст вручную.
 
 После выбора вакансии CLI показывает локальный risk score:
 
 ```text
-Локальный риск: 3/10 — low
+Локальный риск: 3/10 — medium
 Найденные флаги:
 - ...
 ```
@@ -85,113 +79,152 @@ python src/main.py
 Локальные красные флаги не найдены.
 ```
 
-Локальная оценка не заменяет LLM-анализ. Это только предварительная подсказка по фразам вроде `активные продажи`, `холодные звонки`, `личный автомобиль`, `курьер`, `грузчик`, `зарплата только процентом`.
+Это предварительная локальная подсказка, не замена LLM-анализу.
 
-Дальше доступны режимы:
-- `manual_prompt` — только вывести готовый промпт для ChatGPT;
-- `manual_json_save` — вывести промпт, принять JSON-ответ от ChatGPT, проверить и сохранить результат;
-- `api` — отправить вакансию в OpenAI API и сохранить структурированный анализ.
+Доступные режимы анализа:
+- `manual_prompt` — только вывести готовый prompt для ChatGPT;
+- `manual_json_save` — вывести prompt, принять JSON до строки `END`, проверить и сохранить CSV;
+- `api` — отправить вакансию в OpenAI API, а без ключа переключиться в `manual_prompt`.
 
-Если `OPENAI_API_KEY` отсутствует или пустой, API-запрос не выполняется, а приложение переключается в `manual_prompt`.
+## Анализ `.txt` файла
+
+Команда:
+
+```powershell
+python src/main.py analyze-file data/sample_yandex_fintech.txt
+```
+
+По умолчанию используется режим `manual_prompt`.
+
+Явный выбор режима:
+
+```powershell
+python src/main.py analyze-file data/sample_yandex_fintech.txt --mode manual_prompt
+python src/main.py analyze-file data/sample_yandex_fintech.txt --mode manual_json_save
+python src/main.py analyze-file data/sample_yandex_fintech.txt --mode api
+```
+
+Если файл не найден или пустой, CLI покажет понятную ошибку.
 
 ## Просмотр сохранённых анализов
 
-Пункт `2 — посмотреть сохранённые анализы` читает:
+Интерактивно: пункт `2 — посмотреть сохранённые анализы`.
+
+Через команду:
+
+```powershell
+python src/main.py view --limit 10
+python src/main.py view --decision apply --limit 10
+python src/main.py view --min-score 7 --limit 10
+```
+
+Данные читаются из:
 
 ```text
 output/analyses.csv
 ```
 
-Если CSV отсутствует или пустой, приложение покажет понятное сообщение.
+## Экспорт отдельных Markdown-файлов
 
-В подменю просмотра доступны фильтры:
+Интерактивно: пункт `3 — экспортировать анализ в Markdown`.
 
-```text
-1 — показать последние 5
-2 — показать только apply
-3 — показать только consider
-4 — показать только skip
-5 — показать вакансии с fit_score от 7 и выше
-0 — назад в главное меню
-```
-
-После выбора фильтра можно указать количество строк. Если ввести пустое или некорректное значение, используется `5`.
-
-## Экспорт в Markdown
-
-Пункт `3 — экспортировать анализ в Markdown` открывает меню:
-
-```text
-1 — экспортировать один анализ
-2 — экспортировать последние N анализов
-0 — назад
-```
-
-Markdown-файлы создаются в:
-
-```text
-output/exports/
-```
-
-Имена файлов имеют формат:
-
-```text
-analysis_YYYYMMDD_HHMMSS.md
-```
-
-Если файл с таким именем уже существует, добавляется числовой суффикс.
-
-## Быстрые CLI-команды
-
-Интерактивное меню сохраняется, но дополнительно можно запускать команды через `argparse`.
-
-Показать последние 10 анализов:
-
-```powershell
-python src/main.py view --limit 10
-```
-
-Показать последние 10 анализов с решением `apply`:
-
-```powershell
-python src/main.py view --decision apply --limit 10
-```
-
-Показать последние 10 анализов с `fit_score >= 7`:
-
-```powershell
-python src/main.py view --min-score 7 --limit 10
-```
-
-Экспортировать последние 5 анализов в Markdown:
+Через команду:
 
 ```powershell
 python src/main.py export --limit 5
 ```
 
-## Файлы в `output`
-
-После успешного API-анализа или успешного режима `manual_json_save` создаётся:
-
-```text
-output/analyses.csv
-```
-
-Если файл отсутствует, он создаётся с заголовками. Если файл уже есть, новая строка добавляется в конец без перезаписи старых данных.
-
-Markdown-экспорты создаются в:
+Файлы создаются в:
 
 ```text
 output/exports/
 ```
 
-## Этап 6
+## Общий Markdown-отчёт
+
+Команда `report` создаёт один общий Markdown-файл по нескольким сохранённым анализам:
+
+```powershell
+python src/main.py report --limit 10
+python src/main.py report --decision apply --limit 10
+python src/main.py report --min-score 7 --limit 10
+python src/main.py report --decision apply --min-score 7 --limit 10
+```
+
+Отчёты создаются в:
+
+```text
+output/reports/
+```
+
+Отчёт содержит:
+- дату создания;
+- применённые фильтры;
+- количество вакансий;
+- сводку по `apply / consider / skip`;
+- средний `fit_score`;
+- количество high risk по `sales_calls_risk`;
+- количество high risk по `vague_conditions_risk`;
+- краткие блоки по каждой вакансии.
+
+## Настройка весов risk score
+
+Веса локального risk score лежат в:
+
+```text
+config/risk_weights.json
+```
+
+Пример:
+
+```json
+{
+  "active_sales": 4,
+  "cold_calls": 4,
+  "client_calls": 3,
+  "objections": 3,
+  "client_search": 4,
+  "sales_plan": 4,
+  "personal_car": 4,
+  "courier": 5,
+  "loader": 5,
+  "promoter": 4,
+  "commission_only": 5,
+  "unlimited_income": 3,
+  "fast_career_growth": 1,
+  "teach_to_earn": 3,
+  "physical_load": 4,
+  "high_stress": 2
+}
+```
+
+Если файл отсутствует или содержит невалидный JSON, приложение использует встроенные веса и не падает.
+
+## Пример рабочего сценария
+
+```powershell
+python src/main.py analyze-file data/sample_yandex_fintech.txt --mode manual_prompt
+python src/main.py view --limit 10
+python src/main.py report --decision apply --min-score 7 --limit 10
+```
+
+## Файлы в `output`
+
+```text
+output/analyses.csv
+output/exports/
+output/reports/
+```
+
+CSV создаётся после успешного API-анализа или успешного режима `manual_json_save`.
+
+## Этап 7
 
 На следующем этапе можно добавить:
-- отдельный `argparse`-режим анализа вакансии из файла;
-- выбор количества строк сразу в главном меню просмотра;
-- экспорт CSV-фильтра в отдельный Markdown-отчёт;
-- более прозрачную таблицу весов локального risk score;
-- тесты CLI-команд через subprocess.
+- CLI-команду `analyze-file --save-prompt`;
+- экспорт отфильтрованного списка в CSV;
+- более подробную таблицу локальных флагов в Markdown-отчёте;
+- тесты интерактивного меню через subprocess;
+- настройку пути к CSV и папкам output через аргументы CLI.
 
 Streamlit, база данных, агенты, RAG, hh.ru API, парсинг сайтов и Docker не входят в текущую версию.

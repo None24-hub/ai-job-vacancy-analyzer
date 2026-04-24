@@ -24,7 +24,7 @@ def save_analysis_to_csv(
     analysis: VacancyAnalysis,
     path: Path = OUTPUT_CSV_PATH,
 ) -> Path:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    path.parent.mkdir(parents=True, exist_ok=True)
 
     row = _prepare_csv_row(analysis)
     file_exists = path.exists() and path.stat().st_size > 0

@@ -7,9 +7,11 @@ from dotenv import load_dotenv
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / "data"
-OUTPUT_DIR = ROOT_DIR / "output"
+CONFIG_DIR = ROOT_DIR / "config"
+OUTPUT_DIR = Path(os.getenv("AI_JOB_ANALYZER_OUTPUT_DIR", str(ROOT_DIR / "output")))
 SAMPLE_VACANCY_PATH = DATA_DIR / "sample_yandex_fintech.txt"
-OUTPUT_CSV_PATH = OUTPUT_DIR / "analyses.csv"
+OUTPUT_CSV_PATH = Path(os.getenv("AI_JOB_ANALYZER_OUTPUT_CSV", str(OUTPUT_DIR / "analyses.csv")))
+RISK_WEIGHTS_PATH = CONFIG_DIR / "risk_weights.json"
 
 DEFAULT_OPENAI_MODEL = "gpt-4.1-mini"
 

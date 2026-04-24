@@ -60,3 +60,29 @@ def test_calculate_local_risk_score_is_capped_at_10() -> None:
     result = calculate_local_risk_score(text)
 
     assert result["risk_score"] == 10
+
+
+def test_calculate_local_risk_score_uses_custom_json_weights(tmp_path) -> None:
+    weights_path = tmp_path / "risk_weights.json"
+    weights_path.write_text('{"fast_career_growth": 6}', encoding="utf-8")
+
+    result = calculate_local_risk_score(
+        "В вакансии обещают быстрый карьерный рост.",
+        weights_path=weights_path,
+    )
+
+    assert result["risk_score"] == 6
+    assert result["risk_level"] == "high"
+
+
+def test_calculate_local_risk_score_falls_back_when_weights_json_is_invalid(tmp_path) -> None:
+    weights_path = tmp_path / "risk_weights.json"
+    weights_path.write_text("{bad json", encoding="utf-8")
+
+    result = calculate_local_risk_score(
+        "В вакансии обещают быстрый карьерный рост.",
+        weights_path=weights_path,
+    )
+
+    assert result["risk_score"] == 1
+    assert result["risk_level"] == "low"
