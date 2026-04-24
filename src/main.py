@@ -1,10 +1,11 @@
+import argparse
 import json
 import sys
 
 from analyzer import AnalysisError, analyze_with_api, parse_analysis_json
 from config import OUTPUT_CSV_PATH, SAMPLE_VACANCY_PATH, ensure_directories, load_config
-from heuristics import detect_red_flags
-from markdown_export import export_analysis_to_markdown
+from heuristics import calculate_local_risk_score
+from markdown_export import export_analyses_to_markdown, export_analysis_to_markdown
 from prompts import build_manual_prompt
 from schemas import VacancyAnalysis
 from storage import filter_analyses, load_recent_analyses, load_saved_analyses, save_analysis_to_csv
@@ -133,14 +134,17 @@ def choose_analysis_mode() -> str | None:
 
 
 def print_local_red_flags(vacancy_text: str) -> None:
-    flags = detect_red_flags(vacancy_text)
+    result = calculate_local_risk_score(vacancy_text)
+    flags = result["red_flags"]
 
     print("\nЛокальная проверка красных флагов:")
+    print(f"Локальный риск: {result['risk_score']}/10 — {result['risk_level']}")
 
     if not flags:
         print("Локальные красные флаги не найдены.")
         return
 
+    print("Найденные флаги:")
     for flag in flags:
         print(f"- {flag}")
 
@@ -175,6 +179,34 @@ def print_analyses(analyses: list[dict[str, str]]) -> None:
         print(f"   Решение: {row.get('decision', 'не указано')}")
         print(f"   Sales/calls risk: {row.get('sales_calls_risk', 'не указано')}")
         print(f"   Vague conditions risk: {row.get('vague_conditions_risk', 'не указано')}")
+
+
+def ask_result_limit(default: int = 5) -> int:
+    value = prompt_input(f"Сколько анализов показать? По умолчанию {default}: ")
+
+    if value is None or not value.strip():
+        return default
+
+    try:
+        limit = int(value.strip())
+    except ValueError:
+        return default
+
+    return limit if limit > 0 else default
+
+
+def apply_saved_filters(
+    analyses: list[dict[str, str]],
+    decision: str | None = None,
+    min_score: int | None = None,
+    limit: int = 5,
+) -> list[dict[str, str]]:
+    return filter_analyses(
+        analyses,
+        decision=decision,
+        min_score=min_score,
+        limit=limit,
+    )
 
 
 def run_manual_json_save_mode(vacancy_text: str) -> None:
@@ -263,25 +295,51 @@ def run_view_saved_menu() -> None:
         choice = choice.strip()
 
         if choice == "1":
-            print("\nПоследние 5 анализов:")
-            print_analyses(all_analyses[-5:])
+            limit = ask_result_limit()
+            print(f"\nПоследние {limit} анализов:")
+            print_analyses(all_analyses[-limit:])
         elif choice == "2":
+            limit = ask_result_limit()
             print("\nАнализы с решением apply:")
-            print_analyses(filter_analyses(all_analyses, decision="apply"))
+            print_analyses(apply_saved_filters(all_analyses, decision="apply", limit=limit))
         elif choice == "3":
+            limit = ask_result_limit()
             print("\nАнализы с решением consider:")
-            print_analyses(filter_analyses(all_analyses, decision="consider"))
+            print_analyses(apply_saved_filters(all_analyses, decision="consider", limit=limit))
         elif choice == "4":
+            limit = ask_result_limit()
             print("\nАнализы с решением skip:")
-            print_analyses(filter_analyses(all_analyses, decision="skip"))
+            print_analyses(apply_saved_filters(all_analyses, decision="skip", limit=limit))
         elif choice == "5":
+            limit = ask_result_limit()
             print("\nАнализы с fit_score от 7 и выше:")
-            print_analyses(filter_analyses(all_analyses, min_score=7))
+            print_analyses(apply_saved_filters(all_analyses, min_score=7, limit=limit))
         else:
             print("Введите 0, 1, 2, 3, 4 или 5.")
 
 
 def run_export_markdown_flow() -> None:
+    while True:
+        print("\nЭкспорт в Markdown:")
+        print("1 — экспортировать один анализ")
+        print("2 — экспортировать последние N анализов")
+        print("0 — назад")
+
+        choice = prompt_input("Ваш выбор: ")
+
+        if choice is None or choice.strip() == "0":
+            return
+        if choice.strip() == "1":
+            export_single_analysis_interactive()
+            return
+        if choice.strip() == "2":
+            export_recent_analyses_interactive()
+            return
+
+        print("Введите 0, 1 или 2.")
+
+
+def export_single_analysis_interactive() -> None:
     analyses = load_recent_analyses(limit=5)
 
     if not analyses:
@@ -310,9 +368,86 @@ def run_export_markdown_flow() -> None:
     print(f"\nMarkdown-файл создан: {export_path}")
 
 
+def export_recent_analyses_interactive() -> None:
+    limit = ask_result_limit()
+    analyses = load_recent_analyses(limit=limit)
+
+    if not analyses:
+        print(f"\nСохранённые анализы не найдены. CSV-файл ещё не создан или пустой: {OUTPUT_CSV_PATH}")
+        return
+
+    export_paths = export_analyses_to_markdown(analyses)
+
+    print("\nСозданы Markdown-файлы:")
+    for path in export_paths:
+        print(f"- {path}")
+
+
+def build_arg_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="AI Job Vacancy Analyzer CLI")
+    subparsers = parser.add_subparsers(dest="command")
+
+    view_parser = subparsers.add_parser("view", help="Показать сохранённые анализы")
+    view_parser.add_argument("--limit", type=int, default=5, help="Сколько последних анализов показать")
+    view_parser.add_argument("--decision", choices=["apply", "consider", "skip"], help="Фильтр по решению")
+    view_parser.add_argument("--min-score", type=int, help="Минимальный fit_score")
+
+    export_parser = subparsers.add_parser("export", help="Экспортировать последние анализы в Markdown")
+    export_parser.add_argument("--limit", type=int, default=5, help="Сколько последних анализов экспортировать")
+
+    return parser
+
+
+def run_view_command(args: argparse.Namespace) -> None:
+    limit = normalize_limit(args.limit)
+    analyses = load_saved_analyses()
+
+    if not analyses:
+        print(f"Сохранённые анализы не найдены. CSV-файл ещё не создан или пустой: {OUTPUT_CSV_PATH}")
+        return
+
+    filtered = apply_saved_filters(
+        analyses,
+        decision=args.decision,
+        min_score=args.min_score,
+        limit=limit,
+    )
+
+    print_analyses(filtered)
+
+
+def run_export_command(args: argparse.Namespace) -> None:
+    limit = normalize_limit(args.limit)
+    analyses = load_recent_analyses(limit=limit)
+
+    if not analyses:
+        print(f"Сохранённые анализы не найдены. CSV-файл ещё не создан или пустой: {OUTPUT_CSV_PATH}")
+        return
+
+    export_paths = export_analyses_to_markdown(analyses)
+
+    print("Созданы Markdown-файлы:")
+    for path in export_paths:
+        print(f"- {path}")
+
+
+def normalize_limit(value: int, default: int = 5) -> int:
+    return value if value > 0 else default
+
+
 def main() -> None:
     configure_output_encoding()
     ensure_directories()
+
+    parser = build_arg_parser()
+    args = parser.parse_args()
+
+    if args.command == "view":
+        run_view_command(args)
+        return
+    if args.command == "export":
+        run_export_command(args)
+        return
 
     print("AI Job Vacancy Analyzer — MVP CLI")
 

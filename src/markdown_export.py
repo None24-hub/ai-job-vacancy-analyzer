@@ -23,6 +23,13 @@ def export_analysis_to_markdown(
     return export_path
 
 
+def export_analyses_to_markdown(
+    analyses: list[VacancyAnalysis | Mapping[str, Any]],
+    output_dir: Path = DEFAULT_EXPORT_DIR,
+) -> list[Path]:
+    return [export_analysis_to_markdown(analysis, output_dir) for analysis in analyses]
+
+
 def _analysis_to_dict(analysis: VacancyAnalysis | Mapping[str, Any]) -> dict[str, Any]:
     if isinstance(analysis, VacancyAnalysis):
         return analysis.model_dump()

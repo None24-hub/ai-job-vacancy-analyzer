@@ -61,6 +61,7 @@ def filter_analyses(
     analyses: list[dict[str, str]],
     decision: str | None = None,
     min_score: int | None = None,
+    limit: int | None = None,
 ) -> list[dict[str, str]]:
     filtered = analyses
 
@@ -74,6 +75,9 @@ def filter_analyses(
             if _safe_int(row.get("fit_score")) is not None
             and _safe_int(row.get("fit_score")) >= min_score
         ]
+
+    if limit is not None:
+        filtered = filtered[-limit:]
 
     return filtered
 

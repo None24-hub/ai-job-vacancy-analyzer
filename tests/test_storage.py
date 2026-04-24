@@ -5,6 +5,7 @@ from analyzer import parse_analysis_json
 from storage import (
     CSV_FIELDS,
     filter_analyses,
+    load_recent_analyses,
     load_saved_analyses,
     save_analysis_to_csv,
 )
@@ -80,3 +81,30 @@ def test_filter_analyses_by_min_score() -> None:
     filtered = filter_analyses(rows, min_score=7)
 
     assert [row["vacancy_title"] for row in filtered] == ["A", "B"]
+
+
+def test_load_recent_analyses_respects_limit(tmp_path) -> None:
+    output_path = tmp_path / "analyses.csv"
+
+    for index in range(4):
+        data = valid_analysis_data()
+        data["vacancy_title"] = f"Вакансия {index + 1}"
+        analysis = parse_analysis_json(json.dumps(data, ensure_ascii=False))
+        save_analysis_to_csv(analysis, output_path)
+
+    rows = load_recent_analyses(output_path, limit=2)
+
+    assert [row["vacancy_title"] for row in rows] == ["Вакансия 3", "Вакансия 4"]
+
+
+def test_filter_analyses_applies_limit_after_filtering() -> None:
+    rows = [
+        {"vacancy_title": "A", "decision": "apply", "fit_score": "8"},
+        {"vacancy_title": "B", "decision": "skip", "fit_score": "9"},
+        {"vacancy_title": "C", "decision": "apply", "fit_score": "7"},
+        {"vacancy_title": "D", "decision": "apply", "fit_score": "6"},
+    ]
+
+    filtered = filter_analyses(rows, decision="apply", limit=2)
+
+    assert [row["vacancy_title"] for row in filtered] == ["C", "D"]
