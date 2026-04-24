@@ -1,15 +1,90 @@
-# ai-job-vacancy-analyzer
+# AI Job Vacancy Analyzer
 
-`ai-job-vacancy-analyzer` — CLI-приложение для анализа вакансий под профиль начинающего кандидата, которому интересны офисные, удалённые, back-office, support, QA, data, content, Python и automation-задачи.
+CLI-инструмент для анализа вакансий под профиль кандидата начального уровня с использованием LLM, ручного JSON-режима, локальной эвристики красных флагов, CSV-хранилища и Markdown-отчётов.
 
-Проект помогает:
-- оценить вакансию через ChatGPT/OpenAI API или ручной JSON-ответ;
-- увидеть локальные красные флаги и предварительный risk score;
-- сохранить структурированный анализ в CSV;
-- просмотреть и отфильтровать сохранённые анализы;
-- экспортировать отдельные Markdown-файлы и общие Markdown-отчёты.
+## Зачем нужен проект
 
-## Установка на Windows
+Проект помогает кандидату быстрее и спокойнее разбирать вакансии, особенно когда описание выглядит неоднозначно.
+
+Он позволяет:
+- анализировать вакансии по заданному профилю кандидата;
+- выявлять продажи, звонки, мутные условия и другие красные флаги;
+- сохранять результаты анализа;
+- формировать Markdown-отчёты;
+- работать даже без API-ключа через ручной JSON-режим.
+
+## Возможности
+
+- интерактивный CLI;
+- анализ вакансии из ручного ввода;
+- анализ вакансии из `.txt` файла;
+- `manual_prompt` режим;
+- `manual_json_save` режим;
+- OpenAI API режим с fallback в ручной prompt;
+- локальный risk score;
+- настройка risk score через `config/risk_weights.json`;
+- сохранение анализов в CSV;
+- просмотр сохранённых анализов;
+- фильтры по `decision` и `fit_score`;
+- экспорт одного или нескольких анализов в Markdown;
+- общий Markdown-отчёт;
+- автотесты.
+
+## Технологии
+
+- Python;
+- OpenAI SDK;
+- Pydantic;
+- pytest;
+- argparse;
+- CSV;
+- Markdown;
+- JSON config.
+
+## Структура проекта
+
+```text
+ai-job-vacancy-analyzer/
+├── config/
+│   └── risk_weights.json
+├── data/
+│   └── sample_yandex_fintech.txt
+├── docs/
+│   ├── architecture.md
+│   ├── portfolio_note.md
+│   └── stage_history.md
+├── examples/
+│   ├── sample_analysis.json
+│   ├── sample_report.md
+│   └── sample_vacancy.txt
+├── output/
+│   └── .gitkeep
+├── src/
+│   ├── analyzer.py
+│   ├── candidate_profile.py
+│   ├── config.py
+│   ├── heuristics.py
+│   ├── main.py
+│   ├── markdown_export.py
+│   ├── prompts.py
+│   ├── report.py
+│   ├── schemas.py
+│   └── storage.py
+├── tests/
+│   ├── conftest.py
+│   ├── test_analyzer.py
+│   ├── test_cli_commands.py
+│   ├── test_heuristics.py
+│   ├── test_markdown_export.py
+│   ├── test_report.py
+│   └── test_storage.py
+├── .env.example
+├── .gitignore
+├── README.md
+└── requirements.txt
+```
+
+## Быстрый старт на Windows PowerShell
 
 ```powershell
 python -m venv .venv
@@ -18,213 +93,113 @@ pip install -r requirements.txt
 python src/main.py
 ```
 
-Альтернативный запуск без активации:
+## Использование без API-ключа
 
-```powershell
-.\.venv\Scripts\python.exe src\main.py
-```
+Проект можно использовать без OpenAI API.
 
-## Тесты
+В режиме `manual_prompt` приложение выводит готовый prompt для ChatGPT. Пользователь копирует prompt, вставляет его в ChatGPT и получает JSON-ответ.
 
-```powershell
-python -m pytest
-```
+В режиме `manual_json_save` приложение:
+- выводит prompt;
+- принимает JSON-ответ от ChatGPT;
+- валидирует его через Pydantic;
+- сохраняет результат в `output/analyses.csv`.
 
-## Настройка `.env`
+## Использование с OpenAI API
+
+Создайте `.env` из примера:
 
 ```powershell
 copy .env.example .env
 ```
 
-Для ручных режимов API-ключ не нужен.
-
-Для API-режима заполните `.env`:
+Заполните переменные:
 
 ```env
-OPENAI_API_KEY=ваш_api_ключ
+OPENAI_API_KEY=
 OPENAI_MODEL=gpt-4.1-mini
 ```
 
-## Интерактивный режим
+Реальный API-ключ нельзя коммитить в репозиторий.
+
+Если `OPENAI_API_KEY` не указан, API-режим не падает и переключается в `manual_prompt`.
+
+## Примеры команд
 
 ```powershell
 python src/main.py
-```
-
-Главное меню:
-
-```text
-1 — проанализировать вакансию
-2 — посмотреть сохранённые анализы
-3 — экспортировать анализ в Markdown
-0 — выход
-```
-
-## Анализ вакансии
-
-Интерактивный режим позволяет выбрать sample-вакансию или вставить текст вручную.
-
-После выбора вакансии CLI показывает локальный risk score:
-
-```text
-Локальный риск: 3/10 — medium
-Найденные флаги:
-- ...
-```
-
-Если флагов нет:
-
-```text
-Локальный риск: 0/10 — low
-Локальные красные флаги не найдены.
-```
-
-Это предварительная локальная подсказка, не замена LLM-анализу.
-
-Доступные режимы анализа:
-- `manual_prompt` — только вывести готовый prompt для ChatGPT;
-- `manual_json_save` — вывести prompt, принять JSON до строки `END`, проверить и сохранить CSV;
-- `api` — отправить вакансию в OpenAI API, а без ключа переключиться в `manual_prompt`.
-
-## Анализ `.txt` файла
-
-Команда:
-
-```powershell
-python src/main.py analyze-file data/sample_yandex_fintech.txt
-```
-
-По умолчанию используется режим `manual_prompt`.
-
-Явный выбор режима:
-
-```powershell
+python src/main.py --help
 python src/main.py analyze-file data/sample_yandex_fintech.txt --mode manual_prompt
 python src/main.py analyze-file data/sample_yandex_fintech.txt --mode manual_json_save
-python src/main.py analyze-file data/sample_yandex_fintech.txt --mode api
-```
-
-Если файл не найден или пустой, CLI покажет понятную ошибку.
-
-## Просмотр сохранённых анализов
-
-Интерактивно: пункт `2 — посмотреть сохранённые анализы`.
-
-Через команду:
-
-```powershell
 python src/main.py view --limit 10
 python src/main.py view --decision apply --limit 10
 python src/main.py view --min-score 7 --limit 10
-```
-
-Данные читаются из:
-
-```text
-output/analyses.csv
-```
-
-## Экспорт отдельных Markdown-файлов
-
-Интерактивно: пункт `3 — экспортировать анализ в Markdown`.
-
-Через команду:
-
-```powershell
 python src/main.py export --limit 5
-```
-
-Файлы создаются в:
-
-```text
-output/exports/
-```
-
-## Общий Markdown-отчёт
-
-Команда `report` создаёт один общий Markdown-файл по нескольким сохранённым анализам:
-
-```powershell
-python src/main.py report --limit 10
-python src/main.py report --decision apply --limit 10
-python src/main.py report --min-score 7 --limit 10
 python src/main.py report --decision apply --min-score 7 --limit 10
 ```
 
-Отчёты создаются в:
+## Пример результата анализа
 
-```text
-output/reports/
+Компактный пример результата:
+
+```json
+{
+  "vacancy_title": "Специалист сопровождения платёжных сервисов в Финтех",
+  "decision": "apply",
+  "fit_score": 8,
+  "risks": {
+    "sales_calls_risk": "low",
+    "vague_conditions_risk": "low"
+  },
+  "cover_letter": "Здравствуйте! Меня заинтересовала вакансия, потому что она связана с техническими процессами, внутренними системами и разбором инцидентов."
+}
 ```
 
-Отчёт содержит:
-- дату создания;
-- применённые фильтры;
-- количество вакансий;
-- сводку по `apply / consider / skip`;
-- средний `fit_score`;
-- количество high risk по `sales_calls_risk`;
-- количество high risk по `vague_conditions_risk`;
-- краткие блоки по каждой вакансии.
+Полная структура результата описана в prompt и валидируется через Pydantic.
 
-## Настройка весов risk score
+## Где сохраняются результаты
 
-Веса локального risk score лежат в:
+- `output/analyses.csv` — сохранённые структурированные анализы;
+- `output/exports/` — Markdown-файлы отдельных анализов;
+- `output/reports/` — общие Markdown-отчёты.
+
+Рабочие output-файлы не предназначены для коммита в Git.
+
+## Настройка локального risk score
+
+Локальный risk score настраивается через:
 
 ```text
 config/risk_weights.json
 ```
 
-Пример:
+Файл содержит веса для красных флагов вроде продаж, холодных звонков, курьерки, грузчика, личного автомобиля и оплаты только процентом.
 
-```json
-{
-  "active_sales": 4,
-  "cold_calls": 4,
-  "client_calls": 3,
-  "objections": 3,
-  "client_search": 4,
-  "sales_plan": 4,
-  "personal_car": 4,
-  "courier": 5,
-  "loader": 5,
-  "promoter": 4,
-  "commission_only": 5,
-  "unlimited_income": 3,
-  "fast_career_growth": 1,
-  "teach_to_earn": 3,
-  "physical_load": 4,
-  "high_stress": 2
-}
-```
+Если файл отсутствует или содержит невалидный JSON, приложение использует встроенные веса и продолжает работу.
 
-Если файл отсутствует или содержит невалидный JSON, приложение использует встроенные веса и не падает.
-
-## Пример рабочего сценария
+## Тесты
 
 ```powershell
-python src/main.py analyze-file data/sample_yandex_fintech.txt --mode manual_prompt
-python src/main.py view --limit 10
-python src/main.py report --decision apply --min-score 7 --limit 10
+python -m compileall src
+python -m pytest
 ```
 
-## Файлы в `output`
+На текущем этапе проходит 35 тестов.
 
-```text
-output/analyses.csv
-output/exports/
-output/reports/
-```
+## Ограничения
 
-CSV создаётся после успешного API-анализа или успешного режима `manual_json_save`.
+- локальный risk score — эвристика, а не полноценный анализ вакансии;
+- API с реальным ключом нужно проверять отдельно;
+- проект не парсит сайты;
+- проект не использует hh.ru API;
+- `manual_json_save` требует ручной вставки JSON-ответа.
 
-## Этап 7
+## Roadmap
 
-На следующем этапе можно добавить:
-- CLI-команду `analyze-file --save-prompt`;
-- экспорт отфильтрованного списка в CSV;
-- более подробную таблицу локальных флагов в Markdown-отчёте;
-- тесты интерактивного меню через subprocess;
-- настройку пути к CSV и папкам output через аргументы CLI.
-
-Streamlit, база данных, агенты, RAG, hh.ru API, парсинг сайтов и Docker не входят в текущую версию.
+Будущие идеи:
+- web-интерфейс;
+- интеграция с hh.ru API;
+- пакетный импорт вакансий;
+- RAG по резюме кандидата;
+- агентная проверка вакансий;
+- автоматическая генерация откликов под разные резюме.
