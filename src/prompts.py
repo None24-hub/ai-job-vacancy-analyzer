@@ -1,4 +1,4 @@
-from profile import (
+from candidate_profile import (
     CANDIDATE_PROFILE,
     RED_FLAGS,
     SCORING_RULES,

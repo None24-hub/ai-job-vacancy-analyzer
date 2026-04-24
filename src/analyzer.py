@@ -11,6 +11,42 @@ class AnalysisError(Exception):
     pass
 
 
+def _format_validation_error(error: ValidationError) -> str:
+    messages: list[str] = []
+
+    for item in error.errors():
+        field = ".".join(str(part) for part in item["loc"])
+        error_type = item["type"]
+
+        if error_type == "missing":
+            messages.append(f"Отсутствует обязательное поле: {field}.")
+        elif field == "fit_score":
+            messages.append("fit_score должен быть целым числом от 1 до 10.")
+        elif field == "decision":
+            messages.append("decision может быть только: apply, consider, skip.")
+        elif field in {"sales_calls_risk", "vague_conditions_risk"}:
+            messages.append(f"{field} может быть только: low, medium, high, unknown.")
+        else:
+            messages.append(f"Поле {field}: {item['msg']}.")
+
+    return " ".join(messages)
+
+
+def parse_analysis_json(json_text: str) -> VacancyAnalysis:
+    if not json_text.strip():
+        raise AnalysisError("JSON пустой. Вставьте JSON-ответ от ChatGPT перед строкой END.")
+
+    try:
+        raw_data = json.loads(json_text)
+    except json.JSONDecodeError as error:
+        raise AnalysisError(f"Невалидный JSON: {error.msg} на строке {error.lineno}, столбец {error.colno}.") from error
+
+    try:
+        return VacancyAnalysis.model_validate(raw_data)
+    except ValidationError as error:
+        raise AnalysisError(f"JSON не прошёл валидацию. {_format_validation_error(error)}") from error
+
+
 def analyze_with_api(vacancy_text: str, config: AppConfig) -> VacancyAnalysis:
     if not config.openai_api_key:
         raise AnalysisError("OPENAI_API_KEY не указан.")
@@ -38,11 +74,6 @@ def analyze_with_api(vacancy_text: str, config: AppConfig) -> VacancyAnalysis:
         raise AnalysisError("API вернул пустой ответ.")
 
     try:
-        raw_data = json.loads(content)
-    except json.JSONDecodeError as error:
-        raise AnalysisError("API вернул невалидный JSON.") from error
-
-    try:
-        return VacancyAnalysis.model_validate(raw_data)
-    except ValidationError as error:
-        raise AnalysisError(f"Ответ API не прошёл валидацию: {error}") from error
+        return parse_analysis_json(content)
+    except AnalysisError as error:
+        raise AnalysisError(f"Ответ API не прошёл проверку: {error}") from error
