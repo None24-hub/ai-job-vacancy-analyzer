@@ -2,10 +2,11 @@ import json
 import sys
 
 from analyzer import AnalysisError, analyze_with_api, parse_analysis_json
-from config import SAMPLE_VACANCY_PATH, ensure_directories, load_config
+from config import OUTPUT_CSV_PATH, SAMPLE_VACANCY_PATH, ensure_directories, load_config
+from heuristics import detect_red_flags
 from prompts import build_manual_prompt
 from schemas import VacancyAnalysis
-from storage import save_analysis_to_csv
+from storage import load_recent_analyses, save_analysis_to_csv
 
 
 def configure_output_encoding() -> None:
@@ -65,10 +66,11 @@ def choose_vacancy_source() -> str:
 
 def choose_analysis_mode() -> str:
     while True:
-        print("\nВыберите режим анализа:")
+        print("\nВыберите режим:")
         print("1 — manual_prompt: подготовить промпт для ChatGPT")
         print("2 — manual_json_save: подготовить промпт, принять JSON и сохранить CSV")
         print("3 — api: отправить вакансию в OpenAI API")
+        print("4 — view_saved: показать последние сохранённые анализы")
 
         choice = input("Ваш выбор: ").strip()
 
@@ -78,8 +80,25 @@ def choose_analysis_mode() -> str:
             return "manual_json_save"
         if choice == "3":
             return "api"
+        if choice == "4":
+            return "view_saved"
 
-        print("Введите 1, 2 или 3.")
+        print("Введите 1, 2, 3 или 4.")
+
+
+def print_local_red_flags(vacancy_text: str) -> None:
+    flags = detect_red_flags(vacancy_text)
+
+    print("\nЛокальная проверка красных флагов:")
+
+    if not flags:
+        print("Локальные красные флаги не найдены.")
+        return
+
+    for flag in flags:
+        print(f"- {flag}")
+
+    print("Это предварительная подсказка. Она не заменяет LLM-анализ.")
 
 
 def print_manual_prompt(vacancy_text: str) -> None:
@@ -138,6 +157,25 @@ def run_api_mode(vacancy_text: str) -> None:
     print_save_summary(analysis, output_path)
 
 
+def run_view_saved_mode() -> None:
+    analyses = load_recent_analyses()
+
+    if not analyses:
+        print(f"\nСохранённые анализы не найдены. CSV-файл ещё не создан: {OUTPUT_CSV_PATH}")
+        return
+
+    print("\nПоследние сохранённые анализы:")
+
+    for index, row in enumerate(analyses, start=1):
+        print(f"\n{index}. {row.get('vacancy_title', 'не указано')}")
+        print(f"   Компания: {row.get('company', 'не указано')}")
+        print(f"   Зарплата: {row.get('salary', 'не указано')}")
+        print(f"   Score: {row.get('fit_score', 'не указано')}")
+        print(f"   Решение: {row.get('decision', 'не указано')}")
+        print(f"   Sales/calls risk: {row.get('sales_calls_risk', 'не указано')}")
+        print(f"   Vague conditions risk: {row.get('vague_conditions_risk', 'не указано')}")
+
+
 def main() -> None:
     configure_output_encoding()
     ensure_directories()
@@ -149,12 +187,15 @@ def main() -> None:
         print("Текст вакансии пустой. Анализ не запущен.")
         return
 
+    print_local_red_flags(vacancy_text)
     mode = choose_analysis_mode()
 
     if mode == "manual_prompt":
         print_manual_prompt(vacancy_text)
     elif mode == "manual_json_save":
         run_manual_json_save_mode(vacancy_text)
+    elif mode == "view_saved":
+        run_view_saved_mode()
     else:
         run_api_mode(vacancy_text)
 

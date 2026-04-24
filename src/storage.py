@@ -38,3 +38,16 @@ def save_analysis_to_csv(
         writer.writerow(row)
 
     return path
+
+
+def load_recent_analyses(
+    path: Path = OUTPUT_CSV_PATH,
+    limit: int = 5,
+) -> list[dict[str, str]]:
+    if not path.exists() or path.stat().st_size == 0:
+        return []
+
+    with path.open("r", encoding="utf-8-sig", newline="") as file:
+        rows = list(csv.DictReader(file))
+
+    return rows[-limit:]
