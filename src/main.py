@@ -4,9 +4,10 @@ import sys
 from analyzer import AnalysisError, analyze_with_api, parse_analysis_json
 from config import OUTPUT_CSV_PATH, SAMPLE_VACANCY_PATH, ensure_directories, load_config
 from heuristics import detect_red_flags
+from markdown_export import export_analysis_to_markdown
 from prompts import build_manual_prompt
 from schemas import VacancyAnalysis
-from storage import load_recent_analyses, save_analysis_to_csv
+from storage import filter_analyses, load_recent_analyses, load_saved_analyses, save_analysis_to_csv
 
 
 def configure_output_encoding() -> None:
@@ -16,6 +17,13 @@ def configure_output_encoding() -> None:
         sys.stderr.reconfigure(encoding="utf-8")
 
 
+def prompt_input(prompt: str) -> str | None:
+    try:
+        return input(prompt)
+    except EOFError:
+        return None
+
+
 def read_multiline_text(title: str) -> str:
     print(title)
     print("Когда закончите, введите END на отдельной строке и нажмите Enter.")
@@ -23,9 +31,13 @@ def read_multiline_text(title: str) -> str:
     lines: list[str] = []
 
     while True:
-        line = input()
+        line = prompt_input("")
+
+        if line is None:
+            break
         if line.strip().upper() == "END":
             break
+
         lines.append(line)
 
     return "\n".join(lines).strip()
@@ -48,31 +60,65 @@ def read_json_from_user() -> str:
     return read_multiline_text("Вставьте JSON-ответ от ChatGPT.")
 
 
-def choose_vacancy_source() -> str:
+def choose_main_action() -> str | None:
+    while True:
+        print("\nГлавное меню:")
+        print("1 — проанализировать вакансию")
+        print("2 — посмотреть сохранённые анализы")
+        print("3 — экспортировать анализ в Markdown")
+        print("0 — выход")
+
+        choice = prompt_input("Ваш выбор: ")
+
+        if choice is None:
+            return None
+
+        choice = choice.strip()
+
+        if choice in {"0", "1", "2", "3"}:
+            return choice
+
+        print("Введите 0, 1, 2 или 3.")
+
+
+def choose_vacancy_source() -> str | None:
     while True:
         print("\nВыберите источник вакансии:")
         print("1 — загрузить пример из data/sample_yandex_fintech.txt")
         print("2 — вставить текст вручную")
+        print("0 — назад в главное меню")
 
-        choice = input("Ваш выбор: ").strip()
+        choice = prompt_input("Ваш выбор: ")
+
+        if choice is None:
+            return None
+
+        choice = choice.strip()
 
         if choice == "1":
             return read_sample_vacancy()
         if choice == "2":
             return read_vacancy_from_user()
+        if choice == "0":
+            return None
 
-        print("Введите 1 или 2.")
+        print("Введите 0, 1 или 2.")
 
 
-def choose_analysis_mode() -> str:
+def choose_analysis_mode() -> str | None:
     while True:
-        print("\nВыберите режим:")
+        print("\nВыберите режим анализа:")
         print("1 — manual_prompt: подготовить промпт для ChatGPT")
         print("2 — manual_json_save: подготовить промпт, принять JSON и сохранить CSV")
         print("3 — api: отправить вакансию в OpenAI API")
-        print("4 — view_saved: показать последние сохранённые анализы")
+        print("0 — назад в главное меню")
 
-        choice = input("Ваш выбор: ").strip()
+        choice = prompt_input("Ваш выбор: ")
+
+        if choice is None:
+            return None
+
+        choice = choice.strip()
 
         if choice == "1":
             return "manual_prompt"
@@ -80,10 +126,10 @@ def choose_analysis_mode() -> str:
             return "manual_json_save"
         if choice == "3":
             return "api"
-        if choice == "4":
-            return "view_saved"
+        if choice == "0":
+            return None
 
-        print("Введите 1, 2, 3 или 4.")
+        print("Введите 0, 1, 2 или 3.")
 
 
 def print_local_red_flags(vacancy_text: str) -> None:
@@ -114,6 +160,21 @@ def print_save_summary(analysis: VacancyAnalysis, output_path) -> None:
     print(f"Решение: {analysis.decision}")
     print(f"Score: {analysis.fit_score}")
     print(f"CSV-файл: {output_path}")
+
+
+def print_analyses(analyses: list[dict[str, str]]) -> None:
+    if not analyses:
+        print("\nСохранённые анализы не найдены.")
+        return
+
+    for index, row in enumerate(analyses, start=1):
+        print(f"\n{index}. {row.get('vacancy_title', 'не указано')}")
+        print(f"   Компания: {row.get('company', 'не указано')}")
+        print(f"   Зарплата: {row.get('salary', 'не указано')}")
+        print(f"   Score: {row.get('fit_score', 'не указано')}")
+        print(f"   Решение: {row.get('decision', 'не указано')}")
+        print(f"   Sales/calls risk: {row.get('sales_calls_risk', 'не указано')}")
+        print(f"   Vague conditions risk: {row.get('vague_conditions_risk', 'не указано')}")
 
 
 def run_manual_json_save_mode(vacancy_text: str) -> None:
@@ -157,31 +218,11 @@ def run_api_mode(vacancy_text: str) -> None:
     print_save_summary(analysis, output_path)
 
 
-def run_view_saved_mode() -> None:
-    analyses = load_recent_analyses()
-
-    if not analyses:
-        print(f"\nСохранённые анализы не найдены. CSV-файл ещё не создан: {OUTPUT_CSV_PATH}")
-        return
-
-    print("\nПоследние сохранённые анализы:")
-
-    for index, row in enumerate(analyses, start=1):
-        print(f"\n{index}. {row.get('vacancy_title', 'не указано')}")
-        print(f"   Компания: {row.get('company', 'не указано')}")
-        print(f"   Зарплата: {row.get('salary', 'не указано')}")
-        print(f"   Score: {row.get('fit_score', 'не указано')}")
-        print(f"   Решение: {row.get('decision', 'не указано')}")
-        print(f"   Sales/calls risk: {row.get('sales_calls_risk', 'не указано')}")
-        print(f"   Vague conditions risk: {row.get('vague_conditions_risk', 'не указано')}")
-
-
-def main() -> None:
-    configure_output_encoding()
-    ensure_directories()
-
-    print("AI Job Vacancy Analyzer — MVP CLI")
+def run_analysis_flow() -> None:
     vacancy_text = choose_vacancy_source()
+
+    if vacancy_text is None:
+        return
 
     if not vacancy_text:
         print("Текст вакансии пустой. Анализ не запущен.")
@@ -194,10 +235,99 @@ def main() -> None:
         print_manual_prompt(vacancy_text)
     elif mode == "manual_json_save":
         run_manual_json_save_mode(vacancy_text)
-    elif mode == "view_saved":
-        run_view_saved_mode()
-    else:
+    elif mode == "api":
         run_api_mode(vacancy_text)
+
+
+def run_view_saved_menu() -> None:
+    while True:
+        all_analyses = load_saved_analyses()
+
+        if not all_analyses:
+            print(f"\nСохранённые анализы не найдены. CSV-файл ещё не создан или пустой: {OUTPUT_CSV_PATH}")
+            return
+
+        print("\nПросмотр сохранённых анализов:")
+        print("1 — показать последние 5")
+        print("2 — показать только apply")
+        print("3 — показать только consider")
+        print("4 — показать только skip")
+        print("5 — показать вакансии с fit_score от 7 и выше")
+        print("0 — назад в главное меню")
+
+        choice = prompt_input("Ваш выбор: ")
+
+        if choice is None or choice.strip() == "0":
+            return
+
+        choice = choice.strip()
+
+        if choice == "1":
+            print("\nПоследние 5 анализов:")
+            print_analyses(all_analyses[-5:])
+        elif choice == "2":
+            print("\nАнализы с решением apply:")
+            print_analyses(filter_analyses(all_analyses, decision="apply"))
+        elif choice == "3":
+            print("\nАнализы с решением consider:")
+            print_analyses(filter_analyses(all_analyses, decision="consider"))
+        elif choice == "4":
+            print("\nАнализы с решением skip:")
+            print_analyses(filter_analyses(all_analyses, decision="skip"))
+        elif choice == "5":
+            print("\nАнализы с fit_score от 7 и выше:")
+            print_analyses(filter_analyses(all_analyses, min_score=7))
+        else:
+            print("Введите 0, 1, 2, 3, 4 или 5.")
+
+
+def run_export_markdown_flow() -> None:
+    analyses = load_recent_analyses(limit=5)
+
+    if not analyses:
+        print(f"\nСохранённые анализы не найдены. CSV-файл ещё не создан или пустой: {OUTPUT_CSV_PATH}")
+        return
+
+    print("\nВыберите анализ для экспорта:")
+    print_analyses(analyses)
+
+    choice = prompt_input("\nВведите номер анализа или 0 для возврата: ")
+
+    if choice is None or choice.strip() == "0":
+        return
+
+    try:
+        index = int(choice.strip())
+    except ValueError:
+        print("Нужно ввести номер анализа.")
+        return
+
+    if index < 1 or index > len(analyses):
+        print("Анализа с таким номером нет.")
+        return
+
+    export_path = export_analysis_to_markdown(analyses[index - 1])
+    print(f"\nMarkdown-файл создан: {export_path}")
+
+
+def main() -> None:
+    configure_output_encoding()
+    ensure_directories()
+
+    print("AI Job Vacancy Analyzer — MVP CLI")
+
+    while True:
+        action = choose_main_action()
+
+        if action is None or action == "0":
+            print("Выход.")
+            return
+        if action == "1":
+            run_analysis_flow()
+        elif action == "2":
+            run_view_saved_menu()
+        elif action == "3":
+            run_export_markdown_flow()
 
 
 if __name__ == "__main__":

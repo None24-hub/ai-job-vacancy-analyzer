@@ -2,7 +2,12 @@ import csv
 import json
 
 from analyzer import parse_analysis_json
-from storage import CSV_FIELDS, save_analysis_to_csv
+from storage import (
+    CSV_FIELDS,
+    filter_analyses,
+    load_saved_analyses,
+    save_analysis_to_csv,
+)
 from test_analyzer import valid_analysis_data
 
 
@@ -38,3 +43,40 @@ def test_save_analysis_to_csv_appends_without_overwriting(tmp_path) -> None:
         rows = list(csv.DictReader(file))
 
     assert len(rows) == 2
+
+
+def test_load_saved_analyses_reads_rows_from_csv(tmp_path) -> None:
+    analysis = parse_analysis_json(json.dumps(valid_analysis_data(), ensure_ascii=False))
+    output_path = tmp_path / "analyses.csv"
+    save_analysis_to_csv(analysis, output_path)
+
+    rows = load_saved_analyses(output_path)
+
+    assert len(rows) == 1
+    assert rows[0]["vacancy_title"] == "Тестовая вакансия"
+    assert rows[0]["decision"] == "apply"
+
+
+def test_filter_analyses_by_decision() -> None:
+    rows = [
+        {"vacancy_title": "A", "decision": "apply", "fit_score": "8"},
+        {"vacancy_title": "B", "decision": "consider", "fit_score": "7"},
+        {"vacancy_title": "C", "decision": "skip", "fit_score": "3"},
+    ]
+
+    filtered = filter_analyses(rows, decision="apply")
+
+    assert filtered == [{"vacancy_title": "A", "decision": "apply", "fit_score": "8"}]
+
+
+def test_filter_analyses_by_min_score() -> None:
+    rows = [
+        {"vacancy_title": "A", "decision": "apply", "fit_score": "8"},
+        {"vacancy_title": "B", "decision": "consider", "fit_score": "7"},
+        {"vacancy_title": "C", "decision": "skip", "fit_score": "6"},
+        {"vacancy_title": "D", "decision": "skip", "fit_score": "not a number"},
+    ]
+
+    filtered = filter_analyses(rows, min_score=7)
+
+    assert [row["vacancy_title"] for row in filtered] == ["A", "B"]

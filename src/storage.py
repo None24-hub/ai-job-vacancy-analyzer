@@ -44,10 +44,42 @@ def load_recent_analyses(
     path: Path = OUTPUT_CSV_PATH,
     limit: int = 5,
 ) -> list[dict[str, str]]:
+    rows = load_saved_analyses(path)
+
+    return rows[-limit:]
+
+
+def load_saved_analyses(path: Path = OUTPUT_CSV_PATH) -> list[dict[str, str]]:
     if not path.exists() or path.stat().st_size == 0:
         return []
 
     with path.open("r", encoding="utf-8-sig", newline="") as file:
-        rows = list(csv.DictReader(file))
+        return list(csv.DictReader(file))
 
-    return rows[-limit:]
+
+def filter_analyses(
+    analyses: list[dict[str, str]],
+    decision: str | None = None,
+    min_score: int | None = None,
+) -> list[dict[str, str]]:
+    filtered = analyses
+
+    if decision is not None:
+        filtered = [row for row in filtered if row.get("decision") == decision]
+
+    if min_score is not None:
+        filtered = [
+            row
+            for row in filtered
+            if _safe_int(row.get("fit_score")) is not None
+            and _safe_int(row.get("fit_score")) >= min_score
+        ]
+
+    return filtered
+
+
+def _safe_int(value: str | None) -> int | None:
+    try:
+        return int(value) if value is not None else None
+    except ValueError:
+        return None
