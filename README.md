@@ -1,5 +1,7 @@
 # AI Job Vacancy Analyzer
 
+[![Tests](https://github.com/None24-hub/ai-job-vacancy-analyzer/actions/workflows/tests.yml/badge.svg)](https://github.com/None24-hub/ai-job-vacancy-analyzer/actions/workflows/tests.yml)
+
 CLI-инструмент для анализа вакансий под профиль кандидата начального уровня с использованием LLM, ручного JSON-режима, локальной эвристики красных флагов, CSV-хранилища и Markdown-отчётов.
 
 ## Зачем нужен проект
